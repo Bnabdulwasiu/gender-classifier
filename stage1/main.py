@@ -14,7 +14,7 @@ import asyncio
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import declarative_base, sessionmaker
 from sqlalchemy import Column, String, Float, Integer
-import uuid
+import uuid6
 from sqlalchemy import select
 
 DATABASE_URL = "sqlite+aiosqlite:///./profiles.db"
@@ -24,7 +24,7 @@ Base = declarative_base()
 
 class Profile(Base):
     __tablename__ = "profiles"
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    id = Column(String, primary_key=True, default=lambda: str(uuid6.uuid7()))
     name = Column(String, unique=True, index=True)
     gender = Column(String, nullable=True)
     gender_probability = Column(Float, nullable=True)
@@ -38,10 +38,14 @@ class Profile(Base):
 class ProfileSchema(BaseModel):
     id: str
     name: str
-    gender: str
-    age: int
-    age_group: str
-    country_id: str
+    gender: Optional[str]
+    gender_probability: Optional[float]
+    sample_size: Optional[int]
+    age: Optional[int]
+    age_group: Optional[str]
+    country_id: Optional[str]
+    # country_probability: Optional[float]
+    # created_at: str
 
     class Config:
         from_attributes = True
@@ -103,7 +107,7 @@ app = FastAPI(lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -153,7 +157,7 @@ def _profile_to_dict(profile: Profile) -> dict:
 
 
 # Post function
-@app.post("/api/profiles", status_code=201)
+@app.post("/api/profiles/", status_code=201)
 async def create_profile(body: CreateProfileRequest):
     name = body.name.strip()
     if not name:
@@ -181,6 +185,7 @@ async def create_profile(body: CreateProfileRequest):
                 app.state.agify.get("/", params={"name": name}),
                 app.state.nationalize.get("/", params={"name": name}),
             )
+
         except (httpx.HTTPStatusError, httpx.RequestError):
             raise HTTPException(status_code=502, detail={
                 "status": "error",
@@ -191,8 +196,26 @@ async def create_profile(body: CreateProfileRequest):
         age_data = age_res.json()
         nation_data = nation_res.json()
 
-        # Pick top country by probability
+        if gender_data.get("gender") is None or gender_data.get("count") == 0:
+            raise HTTPException(status_code=502, detail={
+                "status": "error",
+                "message": "Genderize returned an invalid response"
+            })
+
+        if age_data.get("age") is None:
+            raise HTTPException(status_code=502, detail={
+                "status": "error",
+                "message": "Agify returned an invalid response"
+            })
+
         countries = nation_data.get("country", [])
+        if not countries:
+            raise HTTPException(status_code=502, detail={
+                "status": "error",
+                "message": "Nationalize returned an invalid response"
+            })
+
+        # Pick top country by probability
         top_country = max(countries, key=lambda c: c["probability"]) if countries else None
 
         created_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
@@ -217,21 +240,6 @@ async def create_profile(body: CreateProfileRequest):
             "status": "success",
             "data": _profile_to_dict(profile)
         })
-    
-
-@app.get("/api/profiles/{profile_id}")
-async def get_profile(profile_id: str):
-    async with AsyncSessionLocal() as session:
-        result = await session.execute(select(Profile).where(Profile.id == profile_id))
-        profile = result.scalar_one_or_none()
-
-        if not profile:
-            raise HTTPException(status_code=404, detail={
-                "status": "error",
-                "message": "Profile not found"
-            })
-
-        return {"status": "success", "data": _profile_to_dict(profile)}
 
 
 @app.get("/api/profiles/", response_model=ProfileListResponse)
@@ -257,8 +265,24 @@ async def get_all_profiles(
         return {
             "status": "success",
             "count": len(profiles),
-            "data": profiles
+            "data": [_profile_to_dict(p) for p in profiles]
         }
+
+
+@app.get("/api/profiles/{profile_id}")
+async def get_profile(profile_id: str):
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(Profile).where(Profile.id == profile_id))
+        profile = result.scalar_one_or_none()
+
+        if not profile:
+            raise HTTPException(status_code=404, detail={
+                "status": "error",
+                "message": "Profile not found"
+            })
+
+        return {"status": "success", "data": _profile_to_dict(profile)}
+
     
 
 @app.delete("/api/profiles/{profile_id}", status_code=status.HTTP_204_NO_CONTENT)
