@@ -141,16 +141,19 @@ fastapi dev main.py
 API runs at `http://localhost:8000`  
 Interactive docs at `http://localhost:8000/docs`
 
-<!-- ---
+---
 
 ## Deployment
 
 Deployed on [FastAPI Cloud](https://fastapicloud.com):
 ```bash
-fastapi deploy main.py
+cd HNG/stage1
+fastapi deploy .
 ```
 
---- -->
+Live URL: `https://profile-app-00443e51.fastapicloud.dev`
+
+---
 
 ## Tech Stack
 
